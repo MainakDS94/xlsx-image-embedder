@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>xlsx Image Embedder</title>
+
+<!-- Libraries: ExcelJS (read+write xlsx w/ images), JSZip (zip), FileSaver -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+<!-- Fonts: Fraunces display + JetBrains Mono body — editorial + technical -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700;9..144,900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --ink: #1a1814;
+    --paper: #f4efe6;
+    --paper-2: #ebe4d4;
+    --rule: #1a1814;
+    --accent: #d94a1f;
+    --accent-2: #2d5a3d;
+    --muted: #6b6357;
+    --ok: #2d5a3d;
+    --err: #a63124;
+    --warn: #b87a1a;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+
+  html,body{background:var(--paper);color:var(--ink);min-height:100vh}
+  body{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    padding: 32px 24px 64px;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(217,74,31,0.04) 0, transparent 40%),
+      radial-gradient(circle at 80% 90%, rgba(45,90,61,0.04) 0, transparent 40%);
+  }
+
+  .wrap{max-width:960px;margin:0 auto}
+
+  /* Masthead */
+  header{
+    border-top: 3px solid var(--ink);
+    border-bottom: 1px solid var(--ink);
+    padding: 18px 0 16px;
+    margin-bottom: 40px;
+    display:flex;align-items:baseline;justify-content:space-between;gap:24px;flex-wrap:wrap;
+  }
+  .title{
+    font-family:'Fraunces',serif;
+    font-weight:900;
+    font-size: clamp(42px, 7vw, 76px);
+    line-height: 0.9;
+    letter-spacing: -0.03em;
+    font-variation-settings: "opsz" 144;
+  }
+  .title em{font-style:italic;color:var(--accent);font-weight:500}
+  .meta{text-align:right;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.12em}
+  .meta strong{color:var(--ink);display:block;font-weight:700}
+
+  h2{
+    font-family:'Fraunces',serif;
+    font-weight:500;
+    font-size: 22px;
+    letter-spacing:-0.01em;
+    margin-bottom: 14px;
+    display:flex;align-items:center;gap:10px;
+  }
+  h2::before{
+    content:'';display:inline-block;width:24px;height:1px;background:var(--ink);
+  }
+  h2 .n{
+    font-family:'JetBrains Mono';font-size:10px;color:var(--accent);
+    padding:2px 6px;border:1px solid var(--accent);border-radius:2px;
+    font-weight:700;
+  }
+
+  section{
+    margin-bottom: 36px;
+    padding: 24px;
+    background: var(--paper-2);
+    border: 1px solid var(--ink);
+    position: relative;
+  }
+  section::before{
+    content:'';position:absolute;top:-1px;left:-1px;right:-1px;height:3px;
+    background: var(--ink);
+  }
+
+  /* Upload drop zone */
+  .drop{
+    border: 2px dashed var(--ink);
+    padding: 32px 20px;
+    text-align:center;
+    background: var(--paper);
+    cursor:pointer;
+    transition: all 0.15s ease;
+    position:relative;
+  }
+  .drop:hover, .drop.drag{
+    background: var(--ink);color:var(--paper);
+    border-style:solid;
+  }
+  .drop.drag{transform:scale(0.995)}
+  .drop input{display:none}
+  .drop .big{
+    font-family:'Fraunces',serif;font-weight:500;font-style:italic;
+    font-size:26px;margin-bottom:4px;
+  }
+  .drop .small{font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:var(--muted)}
+  .drop:hover .small{color:var(--paper-2)}
+
+  .file-info{
+    margin-top:16px;padding:12px 16px;background:var(--paper);border-left:3px solid var(--accent);
+    display:none;font-size:12px;
+  }
+  .file-info.show{display:block}
+  .file-info strong{font-weight:700}
+
+  /* Controls row */
+  .controls{
+    display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;align-items:center;
+  }
+  .field{
+    display:flex;align-items:center;gap:8px;
+    font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);
+  }
+  .field input[type=number]{
+    font-family:'JetBrains Mono';font-size:13px;
+    width:70px;padding:6px 8px;border:1px solid var(--ink);background:var(--paper);
+    color:var(--ink);
+  }
+  .field label{cursor:pointer}
+
+  button{
+    font-family:'JetBrains Mono';font-weight:700;
+    font-size:12px;text-transform:uppercase;letter-spacing:0.1em;
+    padding: 11px 22px;border:1px solid var(--ink);background:var(--ink);color:var(--paper);
+    cursor:pointer;transition:all 0.1s;
+  }
+  button:hover:not(:disabled){background:var(--accent);border-color:var(--accent)}
+  button:disabled{opacity:0.35;cursor:not-allowed}
+  button.secondary{background:var(--paper);color:var(--ink)}
+  button.secondary:hover:not(:disabled){background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  button.danger{background:var(--paper);color:var(--err);border-color:var(--err)}
+  button.danger:hover:not(:disabled){background:var(--err);color:var(--paper)}
+
+  /* Progress */
+  .progress-wrap{display:none}
+  .progress-wrap.show{display:block}
+  .bar{
+    height: 10px;background:var(--paper);border:1px solid var(--ink);
+    position:relative;overflow:hidden;margin-bottom:12px;
+  }
+  .bar-fill{
+    height:100%;background:var(--accent);width:0%;
+    transition: width 0.2s ease;
+    background-image: repeating-linear-gradient(
+      45deg, transparent, transparent 6px,
+      rgba(0,0,0,0.12) 6px, rgba(0,0,0,0.12) 12px
+    );
+  }
+  .stats{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:14px;
+  }
+  .stat{
+    padding:10px 12px;background:var(--paper);border:1px solid var(--ink);
+  }
+  .stat .k{font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted)}
+  .stat .v{font-family:'Fraunces',serif;font-size:26px;font-weight:700;line-height:1}
+  .stat.ok .v{color:var(--ok)}
+  .stat.err .v{color:var(--err)}
+
+  .log{
+    font-family:'JetBrains Mono';font-size:11px;
+    max-height:260px;overflow-y:auto;
+    background:var(--ink);color:var(--paper);padding:12px 14px;
+    line-height:1.7;
+  }
+  .log-row{display:flex;gap:10px;align-items:baseline}
+  .log-row .t{color:#8a7d6e;flex-shrink:0;width:56px}
+  .log-row.ok .s{color:#7fb58f}
+  .log-row.err .s{color:#e88878}
+  .log-row.warn .s{color:#e3b56a}
+  .log-row .s{flex-shrink:0;width:18px;font-weight:700}
+  .log-row .m{word-break:break-all}
+
+  /* Gallery */
+  .gallery{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));
+    gap:8px;margin-top:16px;max-height:320px;overflow-y:auto;
+    padding:12px;background:var(--paper);border:1px solid var(--ink);
+  }
+  .gallery img{
+    width:100%;aspect-ratio:1;object-fit:contain;
+    background:white;border:1px solid var(--ink);
+    padding:4px;
+  }
+  .gallery:empty::after{
+    content:'— no images yet —';color:var(--muted);grid-column:1/-1;text-align:center;
+    padding:30px 0;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;
+  }
+
+  /* Output buttons */
+  .outputs{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+
+  .note{
+    font-size:11px;color:var(--muted);line-height:1.7;
+    padding: 12px 14px; background: rgba(217,74,31,0.08);
+    border-left: 3px solid var(--accent);margin-top:16px;
+  }
+  .note strong{color:var(--ink)}
+
+  /* Column picker */
+  .picker{display:none;margin-top:18px;padding:16px;background:var(--paper);border:1px solid var(--ink)}
+  .picker.show{display:block}
+  .picker-title{
+    font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);
+    margin-bottom:10px;
+  }
+  .picker-title strong{color:var(--ink);font-weight:700}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{
+    font-family:'JetBrains Mono';font-size:11px;
+    padding:6px 10px;border:1px solid var(--ink);background:var(--paper-2);color:var(--ink);
+    cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:6px;
+    transition:all 0.1s;
+  }
+  .chip:hover{background:var(--ink);color:var(--paper)}
+  .chip.active{background:var(--accent);color:var(--paper);border-color:var(--accent)}
+  .chip .hit{
+    font-size:9px;padding:1px 5px;background:rgba(0,0,0,0.15);border-radius:2px;
+    font-weight:700;
+  }
+  .chip.active .hit{background:rgba(255,255,255,0.25)}
+  .chip.empty{opacity:0.4}
+  .chip.empty:hover{opacity:0.7}
+
+  footer{
+    margin-top:48px;padding-top:16px;border-top:1px solid var(--ink);
+    font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);
+    display:flex;justify-content:space-between;
+  }
+
+  @media (max-width:600px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .meta{text-align:left}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="title">Image<br>Embed<em>der</em>.</div>
+    <div class="meta">
+      <strong>Batch utility</strong>
+      Excel ⟶ URLs ⟶ images ⟶ Excel + ZIP
+    </div>
+  </header>
+
+  <!-- STEP 1 -->
+  <section>
+    <h2><span class="n">01</span> Upload spreadsheet</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".xlsx,.xls" />
+      <div class="big">Drop your .xlsx here</div>
+      <div class="small">or click to browse · any .xlsx, any column names</div>
+    </label>
+    <div class="file-info" id="fileInfo"></div>
+    <div class="picker" id="picker">
+      <div class="picker-title">Pick columns containing <strong>image URLs</strong> — click to toggle · number shows rows with URLs</div>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="controls">
+      <div class="field">
+        <label for="thumb">Thumb px</label>
+        <input type="number" id="thumb" value="80" min="40" max="300" step="10">
+      </div>
+      <div class="field">
+        <label for="conc">Concurrency</label>
+        <input type="number" id="conc" value="4" min="1" max="12">
+      </div>
+      <div class="field">
+        <label for="limit">Row limit (0 = all)</label>
+        <input type="number" id="limit" value="0" min="0">
+      </div>
+      <button id="go" disabled>▸ Process all rows</button>
+      <button id="stop" class="secondary" disabled>■ Stop</button>
+    </div>
+    <div class="note" id="modeNote">
+      <strong>Checking connection mode…</strong>
+    </div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="progress-wrap" id="progressWrap">
+    <h2><span class="n">02</span> Processing</h2>
+    <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+    <div class="stats">
+      <div class="stat"><div class="k">Total</div><div class="v" id="sTotal">0</div></div>
+      <div class="stat ok"><div class="k">Downloaded</div><div class="v" id="sOk">0</div></div>
+      <div class="stat err"><div class="k">Failed</div><div class="v" id="sErr">0</div></div>
+      <div class="stat"><div class="k">Skipped</div><div class="v" id="sSkip">0</div></div>
+    </div>
+    <div class="log" id="log"></div>
+  </section>
+
+  <!-- STEP 3 -->
+  <section class="progress-wrap" id="galleryWrap">
+    <h2><span class="n">03</span> Downloaded files</h2>
+    <div class="gallery" id="gallery"></div>
+    <div class="outputs" style="margin-top:16px">
+      <button id="dlXlsx" disabled>⬇ Download Excel (with images)</button>
+      <button id="dlZip" class="secondary" disabled>⬇ Download images ZIP</button>
+      <button id="reset" class="danger" disabled>✕ Delete all &amp; reset</button>
+    </div>
+  </section>
+
+  <footer>
+    <span>Runs locally in your browser · no upload to server</span>
+    <span>v1.0</span>
+  </footer>
+</div>
+
+<script>
+/* ============================================================
+   State
+   ============================================================ */
+const state = {
+  file: null,
+  rows: [],           // [{rowNum, byCol: {colName: url|null}}]
+  headers: [],
+  headerIndex: {},    // name -> 1-based col index
+  urlCountByCol: {},  // name -> number of http URLs in that column
+  selectedCols: [],   // user-picked column names
+  images: new Map(),  // key `r${row}_${col}` -> { blob, url, ext, col, row }
+  running: false,
+  abort: false,
+  workbook: null,     // ExcelJS workbook
+  wsName: null,
+  counts: { total:0, ok:0, err:0, skip:0 }
+};
+
+const $ = id => document.getElementById(id);
+
+/* ============================================================
+   File upload
+   ============================================================ */
+const drop = $('drop'), fileInput = $('file');
+
+['dragenter','dragover'].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); })
+);
+['dragleave','drop'].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); })
+);
+drop.addEventListener('drop', e => {
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+async function handleFile(f){
+  state.file = f;
+  $('fileInfo').innerHTML = `<strong>${escapeHtml(f.name)}</strong> · ${(f.size/1024).toFixed(1)} KB · reading…`;
+  $('fileInfo').classList.add('show');
+  $('picker').classList.remove('show');
+  $('go').disabled = true;
+
+  try{
+    const buf = await f.arrayBuffer();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    state.workbook = wb;
+
+    const ws = wb.worksheets[0];
+    state.wsName = ws.name;
+
+    // Headers from row 1
+    const headerRow = ws.getRow(1);
+    state.headers = [];
+    state.headerIndex = {};
+    headerRow.eachCell((cell, col) => {
+      const v = cell.value == null ? `col_${col}` : String(cell.value);
+      state.headers.push(v);
+      state.headerIndex[v] = col;
+    });
+
+    // Count URLs per column
+    state.urlCountByCol = {};
+    for (const name of state.headers) state.urlCountByCol[name] = 0;
+    const totalRows = ws.rowCount;
+    for (let r = 2; r <= totalRows; r++){
+      const row = ws.getRow(r);
+      for (const name of state.headers){
+        const u = cellUrl(row.getCell(state.headerIndex[name]).value);
+        if (u) state.urlCountByCol[name]++;
+      }
+    }
+
+    // Store row data (every column; we'll filter by selection at run time)
+    state.rows = [];
+    for (let r = 2; r <= totalRows; r++){
+      const row = ws.getRow(r);
+      const byCol = {};
+      for (const name of state.headers){
+        byCol[name] = cellUrl(row.getCell(state.headerIndex[name]).value);
+      }
+      state.rows.push({ rowNum: r, byCol });
+    }
+
+    // Auto-select columns with the most URLs (so common case works in one click)
+    const ranked = [...state.headers].sort((a,b) => state.urlCountByCol[b] - state.urlCountByCol[a]);
+    state.selectedCols = ranked.filter(n => state.urlCountByCol[n] > 0 &&
+      state.urlCountByCol[n] >= state.urlCountByCol[ranked[0]] * 0.3);
+    // If nothing has URLs, clear selection
+    if (state.urlCountByCol[ranked[0]] === 0) state.selectedCols = [];
+
+    $('fileInfo').innerHTML =
+      `<strong>${escapeHtml(f.name)}</strong> · sheet &ldquo;${escapeHtml(state.wsName)}&rdquo; · <strong>${state.rows.length}</strong> rows · ${state.headers.length} columns`;
+
+    renderPicker();
+    $('picker').classList.add('show');
+    updateGoButton();
+  } catch(err){
+    console.error(err);
+    $('fileInfo').innerHTML = `<strong style="color:var(--err)">Could not read file:</strong> ${escapeHtml(err.message)}`;
+    $('go').disabled = true;
+  }
+}
+
+function renderPicker(){
+  const chips = $('chips');
+  chips.innerHTML = '';
+  for (const name of state.headers){
+    const n = state.urlCountByCol[name];
+    const active = state.selectedCols.includes(name);
+    const chip = document.createElement('span');
+    chip.className = 'chip' + (active ? ' active' : '') + (n === 0 ? ' empty' : '');
+    chip.innerHTML = `${escapeHtml(name)} <span class="hit">${n}</span>`;
+    chip.addEventListener('click', () => toggleCol(name));
+    chips.appendChild(chip);
+  }
+}
+
+function toggleCol(name){
+  const i = state.selectedCols.indexOf(name);
+  if (i >= 0) state.selectedCols.splice(i, 1);
+  else state.selectedCols.push(name);
+  renderPicker();
+  updateGoButton();
+}
+
+function updateGoButton(){
+  const ready = state.selectedCols.length > 0 &&
+    state.selectedCols.some(c => state.urlCountByCol[c] > 0);
+  $('go').disabled = !ready;
+}
+
+function cellUrl(v){
+  if (v == null) return null;
+  if (typeof v === 'object' && v.hyperlink) return v.hyperlink;
+  if (typeof v === 'object' && v.text) return String(v.text);
+  const s = String(v).trim();
+  return s.startsWith('http') ? s : null;
+}
+
+/* ============================================================
+   Processing
+   ============================================================ */
+$('go').addEventListener('click', runProcess);
+$('stop').addEventListener('click', () => { state.abort = true; addLog('warn','—','Stop requested…'); });
+$('reset').addEventListener('click', resetAll);
+$('dlXlsx').addEventListener('click', downloadXlsx);
+$('dlZip').addEventListener('click', downloadZip);
+
+async function runProcess(){
+  if (state.running) return;
+  state.running = true; state.abort = false;
+  state.images.clear();
+  state.counts = { total:0, ok:0, err:0, skip:0 };
+
+  $('go').disabled = true; $('stop').disabled = false;
+  $('dlXlsx').disabled = true; $('dlZip').disabled = true; $('reset').disabled = true;
+  $('progressWrap').classList.add('show');
+  $('galleryWrap').classList.add('show');
+  $('gallery').innerHTML = '';
+  $('log').innerHTML = '';
+
+  const thumb = clamp(parseInt($('thumb').value)||80, 40, 300);
+  const conc = clamp(parseInt($('conc').value)||4, 1, 12);
+  const limitInput = parseInt($('limit').value)||0;
+  const rowsToDo = limitInput>0 ? state.rows.slice(0, limitInput) : state.rows;
+
+  // Build task queue from user-selected columns
+  const tasks = [];
+  for (const r of rowsToDo){
+    for (const col of state.selectedCols){
+      const url = r.byCol[col];
+      if (!url){ state.counts.skip++; continue; }
+      tasks.push({ row: r.rowNum, col, url });
+    }
+  }
+  state.counts.total = tasks.length;
+  updateStats(); updateBar(0, tasks.length);
+  addLog('ok','▸',`Starting: ${tasks.length} images to fetch across ${rowsToDo.length} rows`);
+
+  let done = 0;
+  let cursor = 0;
+  async function worker(){
+    while (!state.abort && cursor < tasks.length){
+      const i = cursor++;
+      const t = tasks[i];
+      await processTask(t, thumb);
+      done++;
+      updateBar(done, tasks.length);
+    }
+  }
+  const workers = Array.from({length: conc}, worker);
+  await Promise.all(workers);
+
+  state.running = false;
+  $('go').disabled = false; $('stop').disabled = true;
+  $('dlXlsx').disabled = state.images.size === 0;
+  $('dlZip').disabled = state.images.size === 0;
+  $('reset').disabled = false;
+
+  addLog(state.abort?'warn':'ok', state.abort?'■':'✓',
+    state.abort ? `Stopped. ${state.counts.ok} downloaded, ${state.counts.err} failed.`
+                : `Done. ${state.counts.ok} downloaded, ${state.counts.err} failed, ${state.counts.skip} skipped.`);
+}
+
+async function processTask(t, thumbPx){
+  try{
+    // If served from our local proxy (localhost:8765), route through /fetch
+    // to bypass CORS and use the Playwright-backed session. Otherwise try
+    // direct with credentials (works only if same browser is logged in and
+    // site permits cross-origin reads — usually not the case).
+    const viaProxy = location.origin.startsWith('http://localhost') ||
+                     location.origin.startsWith('http://127.0.0.1');
+    const fetchUrl = viaProxy
+      ? `/fetch?url=${encodeURIComponent(t.url)}`
+      : t.url;
+    const fetchOpts = viaProxy ? {} : { credentials:'include', mode:'cors' };
+
+    const resp = await fetch(fetchUrl, fetchOpts);
+    if (!resp.ok){
+      const upstream = resp.headers.get('X-Upstream-Status');
+      state.counts.err++;
+      addLog('err','✕', `[${upstream || resp.status}] r${t.row} ${t.col} → ${t.url}`);
+      updateStats(); return;
+    }
+    const blob = await resp.blob();
+    if (!blob.size || !blob.type.startsWith('image/')){
+      state.counts.err++;
+      addLog('err','✕', `[not-image] r${t.row} ${t.col}`);
+      updateStats(); return;
+    }
+    const thumbBlob = await makeThumb(blob, thumbPx);
+    const ext = extFromUrl(t.url) || 'png';
+    const key = `r${t.row}_${t.col}`;
+    state.images.set(key, { blob: thumbBlob, originalBlob: blob, url: t.url, ext, col: t.col, row: t.row });
+    state.counts.ok++;
+    addLog('ok','✓', `r${t.row} ${t.col}`);
+    addGalleryThumb(thumbBlob, key);
+    updateStats();
+  } catch(e){
+    state.counts.err++;
+    const msg = /Failed to fetch/.test(e.message) ? 'CORS/network blocked' : e.message;
+    addLog('err','✕', `[${msg}] r${t.row} ${t.col}`);
+    updateStats();
+  }
+}
+
+function makeThumb(blob, size){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objUrl = URL.createObjectURL(blob);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ratio = Math.min(size/img.width, size/img.height, 1);
+      const w = Math.max(1, Math.round(img.width * ratio));
+      const h = Math.max(1, Math.round(img.height * ratio));
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0,0,w,h);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(objUrl);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas blob failed')), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(objUrl); reject(new Error('image decode failed')); };
+    img.src = objUrl;
+  });
+}
+
+function extFromUrl(u){
+  const m = u.match(/\.([a-zA-Z0-9]{2,5})(?:\?|#|$)/);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/* ============================================================
+   Output
+   ============================================================ */
+async function downloadXlsx(){
+  const wb = state.workbook;
+  const ws = wb.getWorksheet(state.wsName);
+  const thumb = clamp(parseInt($('thumb').value)||80, 40, 300);
+
+  // Determine which columns actually got downloaded images
+  const colsUsed = [...new Set([...state.images.values()].map(i => i.col))];
+
+  // Add a new column at the right for each one
+  const baseCol = ws.columnCount + 1;
+  const newColIndex = {};
+  colsUsed.forEach((name, i) => {
+    const c = baseCol + i;
+    newColIndex[name] = c;
+    ws.getCell(1, c).value = `${name}_img`;
+    ws.getColumn(c).width = thumb/6;
+  });
+
+  // Set row heights for any row we touched
+  const rowHeight = thumb * 0.78;
+  const touchedRows = new Set();
+  for (const {row} of state.images.values()) touchedRows.add(row);
+  for (const r of touchedRows) ws.getRow(r).height = rowHeight;
+
+  // Embed images
+  for (const [key, info] of state.images){
+    const buf = await info.blob.arrayBuffer();
+    const imgId = wb.addImage({ buffer: buf, extension: 'png' });
+    const c = newColIndex[info.col] - 1; // ExcelJS anchor is 0-based
+    const r = info.row - 1;
+    ws.addImage(imgId, {
+      tl: { col: c, row: r },
+      ext: { width: thumb, height: thumb },
+      editAs: 'oneCell'
+    });
+  }
+
+  const out = await wb.xlsx.writeBuffer();
+  const base = state.file.name.replace(/\.xlsx?$/i,'');
+  saveAs(new Blob([out], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    `${base}_with_images.xlsx`);
+}
+
+async function downloadZip(){
+  const zip = new JSZip();
+  const folder = zip.folder('images');
+  for (const [key, info] of state.images){
+    const name = `row${String(info.row).padStart(4,'0')}_${info.col}.${info.ext}`;
+    folder.file(name, info.originalBlob);
+  }
+  const blob = await zip.generateAsync({ type:'blob' });
+  const base = state.file ? state.file.name.replace(/\.xlsx?$/i,'') : 'images';
+  saveAs(blob, `${base}_images.zip`);
+}
+
+function resetAll(){
+  if (!confirm(`Delete all ${state.images.size} downloaded images and reset?`)) return;
+  state.images.clear();
+  state.counts = { total:0, ok:0, err:0, skip:0 };
+  $('gallery').innerHTML = '';
+  $('log').innerHTML = '';
+  updateStats(); updateBar(0,1);
+  $('progressWrap').classList.remove('show');
+  $('galleryWrap').classList.remove('show');
+  $('dlXlsx').disabled = true; $('dlZip').disabled = true; $('reset').disabled = true;
+  addLog('warn','—','All downloaded data cleared.');
+}
+
+/* ============================================================
+   UI helpers
+   ============================================================ */
+function updateStats(){
+  $('sTotal').textContent = state.counts.total;
+  $('sOk').textContent = state.counts.ok;
+  $('sErr').textContent = state.counts.err;
+  $('sSkip').textContent = state.counts.skip;
+}
+function updateBar(done, total){
+  const pct = total ? Math.min(100, (done/total)*100) : 0;
+  $('barFill').style.width = pct + '%';
+}
+function addLog(kind, symbol, msg){
+  const t = new Date().toLocaleTimeString('en-GB', { hour12:false });
+  const row = document.createElement('div');
+  row.className = `log-row ${kind}`;
+  row.innerHTML = `<span class="t">${t}</span><span class="s">${symbol}</span><span class="m">${escapeHtml(msg)}</span>`;
+  const log = $('log');
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+}
+function addGalleryThumb(blob, key){
+  const url = URL.createObjectURL(blob);
+  const img = document.createElement('img');
+  img.src = url; img.title = key; img.loading = 'lazy';
+  $('gallery').appendChild(img);
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function clamp(n,lo,hi){ return Math.max(lo, Math.min(hi, n)); }
+
+/* ============================================================
+   Startup: detect proxy mode
+   ============================================================ */
+(async function detectMode(){
+  const note = $('modeNote');
+  const isLocal = location.origin.startsWith('http://localhost') ||
+                  location.origin.startsWith('http://127.0.0.1');
+  if (isLocal){
+    try{
+      const r = await fetch('/health', { cache:'no-store' });
+      if (r.ok){
+        note.innerHTML = `<strong>✓ Proxy connected</strong> at ${escapeHtml(location.origin)} — image fetches will use your saved browser session.`;
+        note.style.borderLeftColor = 'var(--ok)';
+        note.style.background = 'rgba(45,90,61,0.08)';
+        return;
+      }
+    } catch(e){ /* fall through */ }
+  }
+  note.innerHTML = `<strong>⚠ Direct mode</strong> — no local proxy detected. The browser will try to fetch images directly. This usually fails because of CORS. Run <code style="background:rgba(0,0,0,0.08);padding:1px 4px">python proxy.py --login</code> then <code style="background:rgba(0,0,0,0.08);padding:1px 4px">python proxy.py</code> and open <code style="background:rgba(0,0,0,0.08);padding:1px 4px">http://localhost:8765/</code>.`;
+})();
+</script>
+</body>
+</html>

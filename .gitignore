@@ -1,0 +1,30 @@
+# Local session data — contains browser cookies, never commit
+session/
+markify_session/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.Python
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# User test files
+*.xlsx
+!tests/fixtures/*.xlsx
+test_out*
+*_with_images.xlsx
+*_images.zip
